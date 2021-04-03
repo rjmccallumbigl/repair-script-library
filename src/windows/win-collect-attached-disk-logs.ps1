@@ -335,7 +335,6 @@ try {
         $subFolder = New-Item -Path $folder.ToString() -Name "$($scriptStartTimeUTC) - UTC" -ItemType "directory"
 
         $logFile = "$subfolder\collectedLogFiles.log"
-        $logArray | out-file -FilePath $logFile -Append
 
         # If Boot partition found grab bcd store and root partition log files
         if ( $isBcdPath ) {
@@ -354,6 +353,7 @@ try {
 
             Write-Host "Copy bootloader $($bcdPath) to $($subFolder.ToString())"
             Copy-Item -Path $bcdPath -Destination "$($folder)\$($bcdFileName)" -Recurse
+            $bcdPath | out-file -FilePath $logFile -Append
         }
         else {
             Write-Host "Cannot grab bootloader, make sure disk is attached and partition is online"
@@ -383,10 +383,12 @@ try {
                     if ($itemToCopy.Count -eq 1){
                         Write-Host "Copy log $($logLocation) to $($subFolder.ToString())"
                         Copy-Item -Path $logLocation -Destination "$($folder)\$($logLocationFileName)" -Recurse
+                        $logLocation | out-file -FilePath $logFile -Append
                     } elseif ($itemToCopy.Count -gt 1) {
                         for ($i = 0; $i -lt $itemToCopy.Count; $i++) {
                             Write-Host "Copy log $($itemToCopy[$i]) to $($subFolder.ToString())"
                             Copy-Item -Path $itemToCopy[$i] -Destination "$($folder[$i])\$($logLocationFileName | ForEach-Object { $_ -replace '\*', $itemToCopy[$i].Name })" -Recurse                    
+                            $itemToCopy[$i] | out-file -FilePath $logFile -Append
                         }
                     }                    
                 }
