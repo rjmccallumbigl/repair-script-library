@@ -386,12 +386,9 @@ try {
                     } elseif ($itemToCopy.Count -gt 1) {
                         for ($i = 0; $i -lt $itemToCopy.Count; $i++) {
                             Write-Host "Copy log $($itemToCopy[$i]) to $($subFolder.ToString())"
-                            Copy-Item -Path $itemToCopy[$i] -Destination "$($folder[$i])\$($logLocationFileName | ForEach-Object { $_ -replace "*", $itemToCopy[$i].Name })" -Recurse                    
+                            Copy-Item -Path $itemToCopy[$i] -Destination "$($folder[$i])\$($logLocationFileName | ForEach-Object { $_ -replace '\*', $itemToCopy[$i].Name })" -Recurse                    
                         }
-                    }
-                    
-                    
-                    
+                    }                    
                 }
                 else {
                     Write-Host "Cannot grab log $($logLocation), may not exist"
