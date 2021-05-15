@@ -1,3 +1,4 @@
+
 function Get-Disk-Partitions() {
     $partitionlist = $null
     $disklist = get-wmiobject Win32_diskdrive | Where-Object { $_.model -like 'Microsoft Virtual Disk' } 
@@ -15,13 +16,12 @@ function Get-Disk-Partitions() {
 }
 
 try {
-    # Declaring variables
-    # $($scriptName).log"
-    # $desktopFolderPath = "$env:USERPROFILE\Desktop\"
+    # Declaring variables    
     $desktopFolderPath = "$env:PUBLIC\Desktop\"
     $logFolderName = "CaseLogs"
     $scriptStartTime = get-date
     $scriptStartTimeUTC = ($scriptStartTime).ToUniversalTime() | ForEach-Object { $_ -replace ":", "." } | ForEach-Object { $_ -replace "/", "-" }
+    $collectedLogArray = @()
 
     # Source: https://github.com/Azure/azure-diskinspect-service/blob/master/pyServer/manifests/windows/windowsupdate
     $logArray = @(
@@ -284,16 +284,16 @@ try {
 
     # Make sure the disk is online
     Write-Host "#02 - Bringing disk online"
-    $disk = get-disk -ErrorAction Stop | where { $_.FriendlyName -eq 'Msft Virtual Disk' }
+    $disk = get-disk -ErrorAction Stop | Where-Object { $_.FriendlyName -eq 'Msft Virtual Disk' }
     $disk | set-disk -IsOffline $false -ErrorAction Stop
  
     # Handle disk partitions
     $partitionlist = Get-Disk-Partitions
-    $partitionGroup = $partitionlist | group DiskNumber
+    $partitionGroup = $partitionlist | Group-Object DiskNumber
 
     Write-Host '#03 - enumerate partitions for boot config'
 
-    forEach ( $partitionGroup in $partitionlist | group DiskNumber ) {
+    forEach ( $partitionGroup in $partitionlist | Group-Object DiskNumber ) {
         # Reset paths for each part group (disk)
         $isBcdPath = $false
         $bcdPath = ''
@@ -301,7 +301,7 @@ try {
         $osPath = ''
 
         # Scan all partitions of a disk for bcd store and os file location 
-        ForEach ($drive in $partitionGroup.Group | select -ExpandProperty DriveLetter ) {      
+        ForEach ($drive in $partitionGroup.Group | Select-Object -ExpandProperty DriveLetter ) {      
             # Check if no bcd store was found on the previous partition already
             if ( -not $isBcdPath ) {
                 $bcdPath = $drive + ':\boot\bcd'
@@ -331,16 +331,16 @@ try {
             Write-Host "Creating folder $($folder)"
         }
 
-        # Create folder named after the current time in UTC
+        # Create subfolder named after the current time in UTC
         $subFolder = New-Item -Path $folder.ToString() -Name "$($scriptStartTimeUTC) - UTC" -ItemType "directory"
 
+        # Create log files indicating files successfully and unsuccessfully grabbed by script
         $logFile = "$subfolder\collectedLogFiles.log"
+        $failedLogFile = "$subfolder\failedLogFiles.log"
 
         # If Boot partition found grab bcd store and root partition log files
         if ( $isBcdPath ) {
             # Copy $bcdPath            
-            # $bcdLocation = $bcdPath.ToString().Substring(2)
-            # Copy-Item -Path $bcdPath -Destination "$($subFolder.ToString())$($bcdLocation)" -Recurse            
             $bcdParentFolderName = $bcdPath.Split("\")[-2]
             $bcdFileName = $bcdPath.Split("\")[-1]
 
@@ -367,36 +367,42 @@ try {
                 $logLocation = "$($drive):$($logName)"; 
 
                 # Confirm file exists
-                if (Test-Path $logLocation) {
-                    $logLocationParentFolderName = $logLocation.Split("\")[-2]
-                    $logLocationFileName = $logLocation.Split("\")[-1]
-
-                    if (Test-Path "$($subFolder.ToString())\$($logLocationParentFolderName)") {
-                        $folder = Get-Item -Path "$($subFolder.ToString())\$($logLocationParentFolderName)"
-                    }
-                    else {
-                        $folder = New-Item -Path $subFolder -Name $logLocationParentFolderName -ItemType "directory"
-                    }
-                    
-                    # Copy-Item -Path $bcdPath -Destination "$($folder)\$($logLocationFileName)" -Recurse  
-                    $itemToCopy = Get-Item $logLocation                 
-                    if ($itemToCopy.Count -eq 1){
-                        Write-Host "Copy log $($logLocation) to $($subFolder.ToString())"
-                        Copy-Item -Path $logLocation -Destination "$($folder)\$($logLocationFileName)" -Recurse
-                        $logLocation | out-file -FilePath $logFile -Append
-                    } elseif ($itemToCopy.Count -gt 1) {
-                        for ($i = 0; $i -lt $itemToCopy.Count; $i++) {
-                            Write-Host "Copy log $($itemToCopy[$i]) to $($subFolder.ToString())"
-                            Copy-Item -Path $itemToCopy[$i] -Destination "$($folder[$i])\$($logLocationFileName | ForEach-Object { $_ -replace '\*', $itemToCopy[$i].Name })" -Recurse                    
-                            $itemToCopy[$i] | out-file -FilePath $logFile -Append
-                        }
-                    }                    
+                if (Test-Path $logLocation) {                    
+                    $itemToCopy = Get-ChildItem $logLocation -Force                    
+                    foreach ($collectedLog in $itemToCopy) {
+                        $collectedLogArray += $collectedLog.FullName
+                    }                                                 
                 }
                 else {
-                    Write-Host "Cannot grab log $($logLocation), may not exist"
+                    "NOT FOUND: $($logLocation)" | out-file -FilePath $failedLogFile -Append
                 }
             }            
-        }
+
+            # Copy verified logs to subfolder on Rescue VM desktop
+            $collectedLogArray | ForEach-Object {
+                Write-Host "Copy log $($_)"
+        
+                $split = $_ -split '\\'
+                $DestFile = $split[1..($split.Length - 1)] -join '\' 
+                $DestFile = "$subFolder\$DestFile"
+                    
+                # Confirm if current log is a file or folder        
+                if (Test-Path -Path $_ -PathType Leaf) {
+                    $logType = "File";
+                    $null = New-Item -Path $DestFile -Type $logType -Force
+                    Copy-Item -Path $_ -Destination $DestFile -Force
+
+                }
+                elseif (Test-Path -Path $_ -PathType Container) {
+                    $logType = "Directory";
+                    $null = New-Item -Path $DestFile -Type $logType -Force
+                    Copy-Item -Path $_ -Destination $DestFile -Force -Recurse
+                }           
+                $_ | out-file -FilePath $logFile -Append
+            }
+
+
+        }   
         else {
             Write-Host "Can't grab OS logs, make sure disk is attached and partition is online"
         }
@@ -414,14 +420,14 @@ try {
 catch {
     Write-Host "Failed on $($logLocation)"   
 
-        # Zip files
-        Write-Host "Creating zipped archive anyways: $($subFolder.Name).zip"
-        $compress = @{
-            Path             = $subFolder
-            CompressionLevel = "Fastest"
-            DestinationPath  = "$($desktopFolderPath)\$($subFolder.Name).zip"
-        }
-        Compress-Archive @compress
+    # Zip files
+    Write-Host "Creating zipped archive anyways: $($subFolder.Name).zip"
+    $compress = @{
+        Path             = $subFolder
+        CompressionLevel = "Fastest"
+        DestinationPath  = "$($desktopFolderPath)\$($subFolder.Name).zip"
+    }
+    Compress-Archive @compress
 
-        throw $_ 
+    throw $_ 
 }
