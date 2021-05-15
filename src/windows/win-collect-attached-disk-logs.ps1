@@ -389,13 +389,12 @@ try {
                 # Confirm if current log is a file or folder        
                 if (Test-Path -Path $_ -PathType Leaf) {
                     $logType = "File";
-                    $null = New-Item -Path $DestFile -Type $logType -Force
+                    $temp = New-Item -Path $DestFile -Type $logType -Force
                     Copy-Item -Path $_ -Destination $DestFile -Force
 
                 }
                 elseif (Test-Path -Path $_ -PathType Container) {
                     $logType = "Directory";
-                    $null = New-Item -Path $DestFile -Type $logType -Force
                     Copy-Item -Path $_ -Destination $DestFile -Force -Recurse
                 }           
                 $_ | out-file -FilePath $logFile -Append
