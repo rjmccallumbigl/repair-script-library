@@ -20,10 +20,10 @@
 #   grab the logs in this situation is to clone the OS disk of the problem VM and attach the clone to a
 #   Rescue VM, where we can manually grab the relevant logs. This script helps this process by using 
 #   PowerShell to automate the log collection process from an OS disk attached as a data disk to a Rescue 
-#	VM. These logs are saved as an archive on the desktop and can then grabbed from the Rescue VM for analysis.
+#	VM. These logs are saved as an archive on the desktop and can then be grabbed from the Rescue VM for analysis.
 #
 #   https://docs.microsoft.com/en-us/azure/virtual-machines/extensions/agent-windows#windows-guest-agent-automatic-logs-collection
-#   
+#   https://docs.microsoft.com/en-us/cli/azure/vm/repair?view=azure-cli-latest
 #
 # .EXAMPLE
 #   az vm repair run -g sourceRG -n sourceVM --run-id win-collect-attached-disk-logs --verbose --run-on-repair
@@ -45,6 +45,11 @@ function Get-Disk-Partitions() {
 	}
 	return $partitionlist
 }
+
+# Initialize script
+. .\src\windows\common\setup\init.ps1
+. .\src\windows\common\helpers\Get-Disk-Partitions.ps1
+Log-Output "START: Running script win-collect-attached-disk-logs"
 
 try {
 	# Declaring variables    
@@ -314,7 +319,7 @@ try {
 	)
 
 	# Make sure the disk is online
-	Log-Output "#02 - Bringing disk online"
+	Log-Output "#01 - Bringing disk online"
 	$disk = get-disk -ErrorAction Stop | Where-Object { $_.FriendlyName -eq 'Msft Virtual Disk' }
 	$disk | set-disk -IsOffline $false -ErrorAction Stop
 
@@ -322,7 +327,7 @@ try {
 	$partitionlist = Get-Disk-Partitions
 	$partitionGroup = $partitionlist | Group-Object DiskNumber
 
-	Log-Output '#03 - enumerate partitions for boot config'
+	Log-Output "#02 - Enumerate partitions for boot config"
 
 	forEach ( $partitionGroup in $partitionlist | Group-Object DiskNumber ) {
 		# Reset paths for each part group (disk)
@@ -355,11 +360,11 @@ try {
 		# Create or get CaseLogs folder on desktop
 		if (Test-Path "$($desktopFolderPath)$($logFolderName)") {
 			$folder = Get-Item -Path "$($desktopFolderPath)$($logFolderName)"
-			Log-Output "Grabbing folder $($folder)"
+			Log-Output "#03 - Grabbing folder $($folder)"
 		}
 		else {
 			$folder = New-Item -Path $desktopFolderPath -Name $logFolderName -ItemType "directory"
-			Log-Output "Creating folder $($folder)"
+			Log-Output "#03 - Creating folder $($folder)"
 		}
 
 		# Create subfolder named after the current time in UTC
@@ -370,8 +375,7 @@ try {
 		$failedLogFile = "$subfolder\failedLogFiles.log"
 
 		# If Boot partition found grab bcd store and root partition log files
-		if ( $isBcdPath ) {
-			# Copy $bcdPath            
+		if ( $isBcdPath ) {			
 			$bcdParentFolderName = $bcdPath.Split("\")[-2]
 			$bcdFileName = $bcdPath.Split("\")[-1]
 
@@ -382,18 +386,17 @@ try {
 				$folder = New-Item -Path $subFolder -Name $bcdParentFolderName -ItemType "directory"
 			}
 
-			Log-Output "Copy bootloader $($bcdPath) to $($subFolder.ToString())"
+			Log-Output "#04 - Copy $($bcdFileName) to $($subFolder.ToString())"
 			Copy-Item -Path $bcdPath -Destination "$($folder)\$($bcdFileName)" -Recurse
 			$bcdPath | out-file -FilePath $logFile -Append
 		}
 		else {
-			Log-Output "Cannot grab bootloader, make sure disk is attached and partition is online"
+			Log-Output "#04 - Cannot grab $($bcdFileName), make sure disk is attached and partition is online"
+			"NOT FOUND: $($bcdFileName)" | out-file -FilePath $failedLogFile -Append
 		}
 	
 		# If Windows partition found grab log files
 		if ( $isOsPath ) {
-
-			# Go through each log in our array
 			foreach ($logName in $logArray) {
 				$logLocation = "$($drive):$($logName)"; 
 
@@ -407,22 +410,23 @@ try {
 				else {
 					"NOT FOUND: $($logLocation)" | out-file -FilePath $failedLogFile -Append
 				}
-			}            
+			}
 
+			Log-Output "#05 - Copy logs to desktop folder"
 			# Copy verified logs to subfolder on Rescue VM desktop
 			$collectedLogArray | ForEach-Object {
-				Log-Output "Copy log $($_)"
-		
+				Log-Info "Copy log $($_)"
+				
+				# Retain directory structure while replacing partition letter
 				$split = $_ -split '\\'
 				$DestFile = $split[1..($split.Length - 1)] -join '\' 
 				$DestFile = "$subFolder\$DestFile"
 					
-				# Confirm if current log is a file or folder        
+				# Confirm if current log is a file or folder prior to copying       
 				if (Test-Path -Path $_ -PathType Leaf) {
 					$logType = "File";
 					$temp = New-Item -Path $DestFile -Type $logType -Force
 					Copy-Item -Path $_ -Destination $DestFile -Force
-
 				}
 				elseif (Test-Path -Path $_ -PathType Container) {
 					$logType = "Directory";
@@ -430,34 +434,29 @@ try {
 				}           
 				$_ | out-file -FilePath $logFile -Append
 			}
-
-
 		}   
 		else {
-			Log-Output "Can't grab OS logs, make sure disk is attached and partition is online"
+			Log-Error "END: Can't grab Windows OS logs, make sure disk is attached and partition is online"
+			$logArray | ForEach-Object { "NOT FOUND: $($_)" } | out-file -FilePath $failedLogFile -Append
+			return $STATUS_ERROR
 		}
 	}
 
 	# Zip files
-	Log-Output "Creating zipped archive $($subFolder.Name).zip"
+	Log-Output "#06 - Creating zipped archive $($subFolder.Name).zip"
 	$compress = @{
 		Path             = $subFolder
 		CompressionLevel = "Fastest"
 		DestinationPath  = "$($desktopFolderPath)\$($subFolder.Name).zip"
 	}
 	Compress-Archive @compress
+	Log-Output "END: Please collect zipped log file $($desktopFolderPath)\$($subFolder.Name).zip from Rescue VM desktop"
+	return $STATUS_SUCCESS
 }
+
+# Log failure scenario
 catch {
-	Log-Output "Failed on $($logLocation)"   
-
-	# Zip files
-	Log-Output "Creating zipped archive anyways: $($subFolder.Name).zip"
-	$compress = @{
-		Path             = $subFolder
-		CompressionLevel = "Fastest"
-		DestinationPath  = "$($desktopFolderPath)\$($subFolder.Name).zip"
-	}
-	Compress-Archive @compress
-
+	Log-Error "END: Script failed on $($logLocation)"   
 	throw $_ 
+	return $STATUS_ERROR
 }
