@@ -1,3 +1,6 @@
+# pip 52.154.77.148
+
+
 
 function Get-Disk-Partitions() {
     $partitionlist = $null
@@ -20,7 +23,7 @@ try {
     $desktopFolderPath = "$env:PUBLIC\Desktop\"
     $logFolderName = "CaseLogs"
     $scriptStartTime = get-date
-    $scriptStartTimeUTC = ($scriptStartTime).ToUniversalTime() | ForEach-Object { $_ -replace ":", "." } | ForEach-Object { $_ -replace "/", "-" }
+    $scriptStartTimeUTC = ($scriptStartTime).ToUniversalTime() | ForEach-Object { $_ -replace ":", "." } | ForEach-Object { $_ -replace "/", "-" } | ForEach-Object { $_ -replace " ", "_" }
     $collectedLogArray = @()
 
     # Source: https://github.com/Azure/azure-diskinspect-service/blob/master/pyServer/manifests/windows/windowsupdate
@@ -332,7 +335,7 @@ try {
         }
 
         # Create subfolder named after the current time in UTC
-        $subFolder = New-Item -Path $folder.ToString() -Name "$($scriptStartTimeUTC) - UTC" -ItemType "directory"
+        $subFolder = New-Item -Path $folder.ToString() -Name "$($scriptStartTimeUTC)_UTC" -ItemType "directory"
 
         # Create log files indicating files successfully and unsuccessfully grabbed by script
         $logFile = "$subfolder\collectedLogFiles.log"
