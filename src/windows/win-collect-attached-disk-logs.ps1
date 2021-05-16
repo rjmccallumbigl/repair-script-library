@@ -69,7 +69,7 @@ try {
 	# Clean up array for parsing
 	$removeDuplicates = $githubContent | Select-Object -uniq
 	$removeKeywords = $removeDuplicates | ForEach-Object { $_ -replace "copy,", "" } | ForEach-Object { $_ -replace "diskinfo,", "" } | ForEach-Object { $_ -replace ",noscan", "" } | ForEach-Object { $_ -replace "ll,", "" }
-	$logArray = $removeKeywords | Where-Object { $_ -notmatch "/Boot/BCD" } | Where-Object { $_ -notmatch "echo," }  | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Sort-Object { $_.length}
+	$logArray = $removeKeywords | Where-Object { $_ -notmatch "/Boot/BCD" } | Where-Object { $_ -notmatch "echo," }  | Where-Object { ![string]::IsNullOrWhiteSpace($_) } | Sort-Object { $_.length }
 
 	# Make sure the disk is online
 	Log-Output "#01 - Bringing disk online"
@@ -127,8 +127,8 @@ try {
 		$logFile = "$subfolder\collectedLogFiles.log"
 		$failedLogFile = "$subfolder\failedLogFiles.log"
 
-		# If Boot partition found grab bcd store and root partition log files
-		if ( $isBcdPath ) {			
+		# If Boot partition found grab bcd store
+		if ( $isBcdPath ) {
 			$bcdParentFolderName = $bcdPath.Split("\")[-2]
 			$bcdFileName = $bcdPath.Split("\")[-1]
 
@@ -165,7 +165,7 @@ try {
 				}
 			}
 
-			Log-Output "#05 - Copy Windows OS logs to desktop folder"
+			Log-Output "#05 - Copy Windows OS logs to $($subFolder.ToString())"
 			# Copy verified logs to subfolder on Rescue VM desktop
 			$collectedLogArray | ForEach-Object {				
 				# Retain directory structure while replacing partition letter
