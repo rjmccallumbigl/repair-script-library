@@ -172,20 +172,20 @@ try {
             [string]$gptNewContent = "[General]`ngPCFunctionalityVersion=2
          gPCMachineExtensionNames=[{42B5FAAE-6536-11D2-AE5A-0000F87571E3}{40B6664F-4972-11D1-A7CA-0000F87571E3}]
          Version=1" 
-            Add-Content -Path $gptPath -Value $gptNewContent -Force -Encoding Default 
+            Add-Content -Path $gptPath -Value $gptNewContent -Force
 
             #Create new script.ini file  
             new-item -Path $ScriptINIPath -Force
             [string]$scriptINIContent = "[Startup]
          0CmdLine=$($scriptName)`n0Parameters="
-            Add-Content -Path $ScriptINIPath -Value $scriptINIContent -Force -Encoding Default
+            Add-Content -Path $ScriptINIPath -Value $scriptINIContent -Force
             
             #Create the script file 
             New-Item -Path $scriptPath -Force
             [string]$scriptcontent = "net user " + $username + " " + $password + " /add /Y
        net localgroup administrators " + $username + " /add
        net localgroup 'remote desktop users' " + $username + " /add" 
-            Add-Content -Path $scriptPath -Value $scriptcontent -Force -Encoding Default
+            Add-Content -Path $scriptPath -Value $scriptcontent -Force
 
             if ($guestHyperVVirtualMachine) {
                 # Bring disk offline
